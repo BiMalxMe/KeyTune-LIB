@@ -1,0 +1,20 @@
+
+# Rust / Cargo
+target/
+Cargo.lock
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Optional: ignore sound assets if you don’t want to push them
+# assets/sounds/
