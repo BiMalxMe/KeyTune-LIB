@@ -1,0 +1,6 @@
+{
+    "volume": 0.6,
+    "mode": "round_robin",  
+    "max_concurrent": 8
+  }
+  
