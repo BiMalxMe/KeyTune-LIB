@@ -1,64 +1,44 @@
-use rodio_wav_fix::{Decoder, OutputStream, Sink, Source};
-use rodio_wav_fix::source::Buffered;
-use std::fs::File;
-use std::io::BufReader;
+use std::{fs::File, io::BufReader};
+use rodio_wav_fix::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rand::Rng;
 
 pub struct AudioEngine {
-    sounds: Vec<Buffered<Decoder<BufReader<File>>>>,
-    rr_index: usize,
-    volume: f32,
+    sinks: Vec<Sink>,
+    stream_handle: OutputStreamHandle,
+    _stream: OutputStream,
+    max_concurrent: usize,
+    total_sounds: usize,
 }
 
 impl AudioEngine {
-    pub fn new(volume: f32) -> anyhow::Result<Self> {
-        Ok(Self {
-            sounds: Vec::new(),
-            rr_index: 0,
-            volume,
-        })
-    }
+    pub fn new(max_concurrent: usize, total_sounds: usize) -> Self {
+        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        let sinks = Vec::with_capacity(max_concurrent);
 
-    pub fn load_folder(&mut self, path: &str) -> anyhow::Result<()> {
-        let entries = std::fs::read_dir(path)?;
-        for entry in entries {
-            let path = entry?.path();
-            if path.extension().map(|s| s == "ogg").unwrap_or(false) {
-                let file = BufReader::new(File::open(&path)?);
-                let decoder = Decoder::new(file)?;
-                self.sounds.push(decoder.buffered());
-            }
-        }
-        Ok(())
-    }
-
-    pub fn play_round_robin(&mut self) {
-        if self.sounds.is_empty() {
-            return;
-        }
-        let sound = &self.sounds[self.rr_index];
-        self.rr_index = (self.rr_index + 1) % self.sounds.len();
-
-        if let Ok((_stream, stream_handle)) = OutputStream::try_default() {
-            let sink = Sink::try_new(&stream_handle).unwrap();
-            sink.set_volume(self.volume);
-            sink.append(sound.clone());
-            sink.detach();
+        AudioEngine {
+            sinks,
+            stream_handle,
+            _stream,
+            max_concurrent,
+            total_sounds,
         }
     }
 
-    pub fn play_random(&mut self) {
-        use rand::{thread_rng, Rng}; // fixed imports
-        if self.sounds.is_empty() {
-            return;
-        }
-        let idx = thread_rng().gen_range(0..self.sounds.len()); // use gen_range
-        let sound = &self.sounds[idx];
+    pub fn play_random_sound(&mut self) {
+        let mut rng = rand::thread_rng();
+        let file_number = rng.gen_range(1..=self.total_sounds);
+        let file_path = format!("sounds/{}.ogg", file_number);
 
-        if let Ok((_stream, stream_handle)) = OutputStream::try_default() {
-            let sink = Sink::try_new(&stream_handle).unwrap();
-            sink.set_volume(self.volume);
-            sink.append(sound.clone());
-            sink.detach();
+        let file = BufReader::new(File::open(&file_path).unwrap());
+        let decoder = Decoder::new(file).unwrap().buffered();
+
+        let sink = Sink::try_new(&self.stream_handle).unwrap();
+        sink.append(decoder);
+
+        self.sinks.push(sink);
+
+        if self.sinks.len() > self.max_concurrent {
+            self.sinks.remove(0);
         }
     }
 }
