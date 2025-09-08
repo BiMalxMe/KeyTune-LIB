@@ -1,35 +1,25 @@
-use std::sync::mpsc::{channel, Sender};
-use anyhow::Result;
-use rdev::{listen, EventType};
-
 mod audio;
 mod key_code;
 
+use std::sync::{Arc, Mutex};
+use rdev::{listen, Event, EventType};
 use audio::AudioEngine;
+use key_code::key_code::code_from_key;
 
-fn main() -> Result<()> {
-    // Channel to send play requests
-    let (tx, rx) = channel::<()>();
+fn main() {
+    let engine = Arc::new(Mutex::new(AudioEngine::new(10)));
 
-    // Spawn audio thread
-    std::thread::spawn(move || {
-        let mut engine = AudioEngine::new(10, 116);
+    println!("Listening for key presses. Press any key to play its sound...");
 
-        for _ in rx {
-            engine.play_random_sound();
-        }
-    });
+    let engine_clone = engine.clone();
 
-    println!("Listening for key presses. Press any key to play sound...");
-
-    // Listen for key presses in main thread
-    listen(move |event| {
-        if let EventType::KeyPress(_) = event.event_type {
-            // Send request to audio thread
-            let _ = tx.send(());
+    listen(move |event: Event| {
+        if let EventType::KeyPress(key) = event.event_type {
+            if let Some(code) = code_from_key(key) {
+                let mut engine = engine_clone.lock().unwrap();
+                engine.play_sound_for_code(code);
+            }
         }
     })
     .unwrap();
-
-    Ok(())
 }

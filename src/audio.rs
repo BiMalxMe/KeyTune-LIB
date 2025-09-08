@@ -1,40 +1,53 @@
-use std::{fs::File, io::BufReader};
+use std::{fs::File, io::BufReader, path::Path};
 use rodio_wav_fix::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
-use rand::Rng;
 
 pub struct AudioEngine {
-    sinks: Vec<Sink>,
+    stream: OutputStream,
     stream_handle: OutputStreamHandle,
-    _stream: OutputStream,
+    sinks: Vec<Sink>,
     max_concurrent: usize,
-    total_sounds: usize,
 }
 
 impl AudioEngine {
-    pub fn new(max_concurrent: usize, total_sounds: usize) -> Self {
-        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-        let sinks = Vec::with_capacity(max_concurrent);
+    pub fn new(max_concurrent: usize) -> Self {
+        let (stream, stream_handle) =
+            OutputStream::try_default().expect("Failed to get default output stream");
 
-        AudioEngine {
-            sinks,
+        Self {
+            stream,
             stream_handle,
-            _stream,
+            sinks: Vec::new(),
             max_concurrent,
-            total_sounds,
         }
     }
 
-    pub fn play_random_sound(&mut self) {
-        let mut rng = rand::thread_rng();
-        let file_number = rng.gen_range(1..=self.total_sounds);
-        let file_path = format!("sounds/{}.ogg", file_number);
+    pub fn play_sound_for_code(&mut self, code: i32) {
+        let file_path = format!("sounds/{}.ogg", code);
+        let path = Path::new(&file_path);
 
-        let file = BufReader::new(File::open(&file_path).unwrap());
-        let decoder = Decoder::new(file).unwrap().buffered();
+        if !path.exists() {
+            eprintln!("Sound file not found: {:?}", path);
+            return;
+        }
+
+        let file = match File::open(path) {
+            Ok(f) => BufReader::new(f),
+            Err(e) => {
+                eprintln!("Failed to open file {:?}: {}", path, e);
+                return;
+            }
+        };
+
+        let decoder = match Decoder::new(file) {
+            Ok(d) => d.buffered(),
+            Err(e) => {
+                eprintln!("Failed to decode audio {:?}: {}", path, e);
+                return;
+            }
+        };
 
         let sink = Sink::try_new(&self.stream_handle).unwrap();
         sink.append(decoder);
-
         self.sinks.push(sink);
 
         if self.sinks.len() > self.max_concurrent {
